@@ -1,0 +1,250 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  admin
+  sales
+}
+
+enum LeadTemperature {
+  cold
+  warm
+  hot
+}
+
+enum LeadStatus {
+  active
+  paused
+  dnc
+  won
+  lost
+  dead
+}
+
+enum WebsiteStatus {
+  unknown
+  missing
+  poor
+  outdated
+  broken
+  good
+}
+
+enum ActivityType {
+  call
+  email
+  meeting
+  visit
+  quote
+  follow_up
+  note
+  text
+  letter
+}
+
+enum ImportStatus {
+  created
+  updated
+  skipped_duplicate
+  error
+}
+
+enum LetterMethod {
+  post
+  hand_delivered
+}
+
+enum LetterResponseStatus {
+  none
+  replied
+  won
+  lost
+}
+
+enum DealStage {
+  proposed
+  won
+  lost
+}
+
+enum ServiceType {
+  Website
+  SEO
+  Hosting
+  Audit
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  leadsAssigned Lead[]       @relation("LeadsAssigned")
+  activities    Activity[]
+  leadSources   LeadSource[] @relation("LeadSourcesUploadedBy")
+  letters       Letter[]     @relation("LettersCreatedBy")
+
+  @@map("users")
+}
+
+model Lead {
+  id                     String          @id @default(uuid()) @db.Uuid
+  businessName           String          @map("business_name")
+  businessNameNormalized String          @map("business_name_normalized")
+  category               String?
+  website                String?
+  websiteDomain          String?         @map("website_domain")
+  websiteStatus          WebsiteStatus   @default(unknown) @map("website_status")
+  websitePlatform        String?         @map("website_platform")
+  opportunity            String?         @map("opportunity")
+  websiteHealth          String?         @map("website_health")
+  phone                  String?
+  email                  String?
+  address                String?
+  postcode               String?
+  city                   String?
+  leadTemperature        LeadTemperature @default(cold) @map("lead_temperature")
+  status                 LeadStatus      @default(active)
+  score                  Int             @default(0)
+  notes                  String?
+  lastContacted          DateTime?       @map("last_contacted")
+  nextFollowUp           DateTime?       @map("next_follow_up")
+  createdAt              DateTime        @default(now()) @map("created_at")
+
+  outreachStage     Int       @default(0) @map("outreach_stage")
+  reactivationStage Int       @default(0) @map("reactivation_stage")
+  outreachStartedAt DateTime? @map("outreach_started_at")
+  nextOutreachDate  DateTime? @map("next_outreach_date")
+  outreachPaused    Boolean   @default(false) @map("outreach_paused")
+  doNotContact      Boolean   @default(false) @map("do_not_contact")
+
+  assignedToId String? @map("assigned_to") @db.Uuid
+  assignedTo   User?   @relation("LeadsAssigned", fields: [assignedToId], references: [id])
+
+  activities    Activity[]
+  importRows    LeadImportRow[]
+  letters       Letter[]
+  deals         Deal[]
+  leadCampaigns LeadCampaign[]
+
+  @@index([websiteDomain], map: "idx_leads_website_domain")
+  @@index([businessNameNormalized], map: "idx_leads_business_name_normalized")
+  @@index([businessNameNormalized, postcode], map: "idx_leads_name_postcode")
+  @@index([phone], map: "idx_leads_phone")
+  @@map("leads")
+}
+
+model Activity {
+  id           String       @id @default(uuid()) @db.Uuid
+  leadId       String       @map("lead_id") @db.Uuid
+  type         ActivityType
+  body         String
+  outcome      String?
+  followUpDate DateTime?    @map("follow_up_date")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  createdById  String?      @map("created_by") @db.Uuid
+
+  lead      Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@index([leadId, createdAt], map: "idx_activity_lead_created")
+  @@map("activities")
+}
+
+model LeadSource {
+  id           String   @id @default(uuid()) @db.Uuid
+  sourceName   String   @map("source_name")
+  uploadedById String?  @map("uploaded_by") @db.Uuid
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+  fileName     String?  @map("file_name")
+  notes        String?
+
+  uploadedBy User?           @relation("LeadSourcesUploadedBy", fields: [uploadedById], references: [id])
+  importRows LeadImportRow[]
+
+  @@map("lead_sources")
+}
+
+model LeadImportRow {
+  id            String       @id @default(uuid()) @db.Uuid
+  leadSourceId  String       @map("lead_source_id") @db.Uuid
+  rawRowJson    Json         @map("raw_row_json")
+  matchedLeadId String?      @map("matched_lead_id") @db.Uuid
+  importStatus  ImportStatus @map("import_status")
+  changesJson   Json?        @map("changes_json")
+  errorMessage  String?      @map("error_message")
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  leadSource  LeadSource @relation(fields: [leadSourceId], references: [id], onDelete: Cascade)
+  matchedLead Lead?      @relation(fields: [matchedLeadId], references: [id])
+
+  @@map("lead_import_rows")
+}
+
+model Letter {
+  id             String               @id @default(uuid()) @db.Uuid
+  leadId         String               @map("lead_id") @db.Uuid
+  campaignId     String?              @map("campaign_id") @db.Uuid
+  letterTemplate String               @map("letter_template")
+  sentDate       DateTime             @map("sent_date")
+  method         LetterMethod
+  trackingRef    String?              @map("tracking_ref")
+  responseStatus LetterResponseStatus @default(none) @map("response_status")
+  createdById    String?              @map("created_by") @db.Uuid
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign  Campaign? @relation(fields: [campaignId], references: [id])
+  createdBy User?     @relation("LettersCreatedBy", fields: [createdById], references: [id])
+
+  @@map("letters")
+}
+
+model Deal {
+  id          String      @id @default(uuid()) @db.Uuid
+  leadId      String      @map("lead_id") @db.Uuid
+  serviceType ServiceType @map("service_type")
+  dealValue   Decimal     @map("deal_value") @db.Decimal(10, 2)
+  stage       DealStage
+  closeDate   DateTime?   @map("close_date")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("deals")
+}
+
+model Campaign {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String
+  targetCategory String?   @map("target_category")
+  offerType      String?   @map("offer_type")
+  startDate      DateTime? @map("start_date")
+  endDate        DateTime? @map("end_date")
+
+  letters       Letter[]
+  leadCampaigns LeadCampaign[]
+
+  @@map("campaigns")
+}
+
+model LeadCampaign {
+  id         String @id @default(uuid()) @db.Uuid
+  leadId     String @map("lead_id") @db.Uuid
+  campaignId String @map("campaign_id") @db.Uuid
+
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, campaignId])
+  @@map("lead_campaigns")
+}
