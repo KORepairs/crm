@@ -36,6 +36,33 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/seed", async (req, res) => {
+  try {
+    const { PrismaClient } = await import("@prisma/client");
+    const bcrypt = await import("bcryptjs");
+
+    const prisma = new PrismaClient();
+
+    const hashedPassword = await bcrypt.hash("password123", 10);
+
+    const admin = await prisma.user.upsert({
+      where: { email: "admin@crm.local" },
+      update: {},
+      create: {
+  name: "Admin",
+  email: "admin@crm.local",
+  passwordHash: hashedPassword,
+  role: "admin",
+},
+    });
+
+    res.json({ message: "Seeded admin user", admin });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Seed failed" });
+  }
+});
+
 const PORT = Number(process.env.PORT || 3001);
 
 app.listen(PORT, "0.0.0.0", () => {
