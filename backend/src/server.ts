@@ -7,7 +7,7 @@ import dashboardRoutes from "./routes/dashboard.routes";
 import importRoutes from "./routes/import.routes";
 import dealsRoutes from "./routes/deals.routes";
 import campaignsRoutes from "./routes/campaigns.routes";
-
+import { prisma } from "./lib/prisma";
 
 
 
@@ -36,12 +36,9 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/seed", async (req, res) => {
+app.get("/seed", async (_req, res) => {
   try {
-    const { PrismaClient } = await import("@prisma/client");
     const bcrypt = await import("bcryptjs");
-
-    const prisma = new PrismaClient();
 
     const hashedPassword = await bcrypt.hash("password123", 10);
 
@@ -49,17 +46,31 @@ app.get("/seed", async (req, res) => {
       where: { email: "admin@crm.local" },
       update: {},
       create: {
-  name: "Admin",
-  email: "admin@crm.local",
-  passwordHash: hashedPassword,
-  role: "admin",
-},
+        name: "Admin",
+        email: "admin@crm.local",
+        passwordHash: hashedPassword,
+        role: "admin",
+      },
     });
 
-    res.json({ message: "Seeded admin user", admin });
+    const sales = await prisma.user.upsert({
+      where: { email: "sales@crm.local" },
+      update: {},
+      create: {
+        name: "Sales User",
+        email: "sales@crm.local",
+        passwordHash: hashedPassword,
+        role: "sales",
+      },
+    });
+
+    res.json({
+      message: "Seeded users",
+      users: [admin.email, sales.email],
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Seed failed" });
+    res.status(500).json({ message: "Seed failed", error: String(err) });
   }
 });
 
